@@ -1,0 +1,6 @@
+package_name: "curl"
+repository_url: "https://alpinelinux.org"
+test_mode: false
+ascii_tree_output: true
+max_depth: 5
+filter_substring: "musl"

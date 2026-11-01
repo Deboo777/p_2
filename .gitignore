@@ -1,0 +1,9 @@
+*.zip
+*.tar
+*.gz
+*.csv
+*.exe
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
