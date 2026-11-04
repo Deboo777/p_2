@@ -109,24 +109,28 @@ def load_test_repository(file_path):
         print(f"[ERROR] Ошибка чтения тестового репозитория: {e}")
     return packages_db
 
-def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, graph=None, path=None):
+def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, graph=None, path=None, order=None, visited_nodes=None):
     """
-    Рекурсивно строит граф зависимостей методом DFS с контролем циклов, глубины и фильтрацией.
+    Рекурсивно строит граф зависимостей методом DFS и вычисляет порядок загрузки пакетов.
     """
     if graph is None:
         graph = {}
     if path is None:
         path = []
+    if order is None:
+        order = []
+    if visited_nodes is None:
+        visited_nodes = set()
 
     if filter_sub and filter_sub in package:
-        return graph
+        return graph, order
 
     if current_depth > max_depth:
-        return graph
+        return graph, order
 
     if package in path:
         print(f"[INFO] Обнаружен цикл зависимостей: {' -> '.join(path)} -> {package}")
-        return graph
+        return graph, order
 
     path.append(package)
     
@@ -140,14 +144,19 @@ def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, 
     graph[package] = filtered_deps
 
     for dep in filtered_deps:
-        build_dependency_graph(dep, db, max_depth, filter_sub, current_depth + 1, graph, path)
+        build_dependency_graph(dep, db, max_depth, filter_sub, current_depth + 1, graph, path, order, visited_nodes)
 
     path.pop()
-    return graph
+    
+    if package not in visited_nodes:
+        visited_nodes.add(package)
+        order.append(package)
+        
+    return graph, order
 
 def main():
     """
-    Основная функция выполнения Этапа 3 для построения графа зависимостей пакета.
+    Основная функция выполнения Этапа 4 для демонстрации порядка загрузки зависимостей.
     """
     config = parse_yaml_config("config.yaml")
     
@@ -155,7 +164,7 @@ def main():
         print("[ERROR] Конфигурация пуста или не найдена.")
         return
         
-    print("Этап 3: Основные операции (DFS граф)")
+    print("Этап 4: Дополнительные операции (Порядок загрузки)")
     
     target_package = config.get("package_name")
     test_mode = config.get("test_mode", False)
@@ -178,11 +187,11 @@ def main():
         print(f"[ERROR] Целевой пакет '{target_package}' не найден в базе данных.")
         return
 
-    graph = build_dependency_graph(target_package, db, max_depth, filter_substring)
+    graph, order = build_dependency_graph(target_package, db, max_depth, filter_substring)
     
-    print(f"\n[УСПЕХ] Полный граф зависимостей для '{target_package}':")
-    for pkg, deps in graph.items():
-        print(f"  {pkg} -> {deps}")
+    print(f"\n[УСПЕХ] Порядок установки (загрузки) пакетов для '{target_package}':")
+    for i, pkg in enumerate(order, 1):
+        print(f"  {i}. {pkg}")
 
 if __name__ == "__main__":
     main()
