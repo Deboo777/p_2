@@ -1,115 +1,125 @@
-import os
-import sys
+import gzip
+import re
+import tarfile
+import urllib.request
+from io import BytesIO
 
-
-def load_config(config_path="config.yaml"):
-    """Загружает и парсит конфигурационный файл YAML вручную."""
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(
-            f"Критическая ошибка: Конфигурационный файл '{config_path}' не найден."
-        )
-
+def parse_yaml_config(file_path):
+    """
+    Вручную парсит базовый конфигурационный файл формата YAML по указанному пути.
+    """
     config = {}
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            for line_num, line in enumerate(f, 1):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
                 line = line.strip()
-                
-                if not line or line.startswith("#"):
+                if not line or line.startswith('#'):
                     continue
-
-                if ":" not in line:
-                    raise ValueError(f"Строка {line_num}: Неверный формат YAML.")
-
-                key, val = line.split(":", 1)
-                key = key.strip()
-                val = val.strip()
-
-                if (val.startswith('"') and val.endswith('"')) or (
-                    val.startswith("'") and val.endswith("'")
-                ):
-                    val = val[1:-1]
-
-                if val.lower() == "true":
-                    val = True
-                elif val.lower() == "false":
-                    val = False
-                elif val.isdigit():
-                    val = int(val)
-
-                config[key] = val
+                if ':' in line:
+                    key, val = line.split(':', 1)
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    if val.isdigit():
+                        val = int(val)
+                    elif val.lower() == 'true':
+                        val = True
+                    elif val.lower() == 'false':
+                        val = False
+                    config[key] = val
     except Exception as e:
-        raise ValueError(
-            f"Ошибка синтаксиса в конфигурационном файле YAML: {e}"
-        )
-
-    if not config:
-        raise ValueError("Ошибка: Конфигурационный файл пуст.")
-
+        print(f"[ERROR] Ошибка при чтении конфигурации: {e}")
     return config
 
+def clean_dependency_name(dep_string):
+    """
+    Очищает строку зависимости от ограничений версий и модификаторов.
+    """
+    match = re.match(r'^([^<=>~!]+)', dep_string)
+    if match:
+        return match.group(1).strip()
+    return dep_string
 
-def validate_config(config):
-    """Проверяет корректность типов и значений всех параметров конфигурации."""
-    errors = []
-
-    package_name = config.get("package_name")
-    if not package_name or not isinstance(package_name, str):
-        errors.append("Параметр 'package_name' должен быть непустой строкой.")
-
-    repo_url = config.get("repository_url")
-    if not repo_url or not isinstance(repo_url, str):
-        errors.append(
-            "Параметр 'repository_url' должен быть непустой строкой (URL или путь)."
+def fetch_apk_index(repo_url):
+    """
+    Загружает и распаковывает файл APKINDEX.tar.gz по указанному URL.
+    """
+    index_url = repo_url.strip().strip('"').strip("'")
+    
+    try:
+        req = urllib.request.Request(
+            index_url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
-
-    test_mode = config.get("test_mode")
-    if not isinstance(test_mode, bool):
-        errors.append(
-            "Параметр 'test_mode' должен быть логического типа (true/false)."
-        )
-
-    ascii_tree = config.get("ascii_tree_output")
-    if not isinstance(ascii_tree, bool):
-        errors.append(
-            "Параметр 'ascii_tree_output' должен быть логического типа (true/false)."
-        )
-
-    max_depth = config.get("max_depth")
-    if not isinstance(max_depth, int) or max_depth < 0:
-        errors.append(
-            "Параметр 'max_depth' должен быть целым неотрицательным числом."
-        )
-
-    filter_sub = config.get("filter_substring")
-    if filter_sub is not None and not isinstance(filter_sub, str):
-        errors.append("Параметр 'filter_substring' должен быть строкой.")
-
-    if errors:
-        error_msg = "Обнаружены ошибки валидации конфигурации:\n" + "\n".join(
-            f"  - {err}" for err in errors
-        )
-        raise ValueError(error_msg)
-
-
-def main():
-    """Основная точка входа приложения для инициализации и вывода конфигурации."""
-    config_file = "config.yaml"
+        response = urllib.request.urlopen(req)
+        compressed_data = response.read()
+    except Exception as e:
+        print(f"[ERROR] Не удалось загрузить репозиторий: {e}")
+        return {}
 
     try:
-        config = load_config(config_file)
-        validate_config(config)
+        with tarfile.open(fileobj=BytesIO(compressed_data), mode="r:gz") as tar:
+            apkindex_file = tar.extractfile("APKINDEX")
+            if not apkindex_file:
+                print("[ERROR] Файл APKINDEX не найден внутри архива.")
+                return {}
+            content = apkindex_file.read().decode('utf-8')
+        return parse_apk_index(content)
+    except tarfile.ReadError:
+        print(f"[ERROR] Файл по адресу не является валидным архивом GZIP.")
+        return {}
 
-        print("Конфигурация приложения успешно загружена")
-        for key, value in config.items():
-            print(f"{key}: {value}")
+def parse_apk_index(content):
+    """
+    Разбирает текстовое содержимое APKINDEX в словарь зависимостей пакетов.
+    """
+    packages_db = {}
+    blocks = content.split('\n\n')
+    
+    for block in blocks:
+        current_package = None
+        dependencies = []
+        
+        for line in block.split('\n'):
+            if line.startswith('P:'):
+                current_package = line[2:].strip()
+            elif line.startswith('D:'):
+                raw_deps = line[2:].strip().split()
+                dependencies = [clean_dependency_name(d) for d in raw_deps]
+        
+        if current_package:
+            packages_db[current_package] = dependencies
+            
+    return packages_db
 
+def main():
+    """
+    Основная функция выполнения Этапа 2 для демонстрации сбора прямых зависимостей.
+    """
+    config = parse_yaml_config("config.yaml")
+    
+    if not config:
+        print("[ERROR] Конфигурация пуста или не найдена.")
+        return
+        
+    print("Этап 2: Сбор данных")
+    
+    target_package = config.get("package_name")
+    repo_url = config.get("repository_url")
+    
+    if not target_package or not repo_url:
+        print("[ERROR] В конфигурации отсутствуют обязательные параметры.")
+        return
 
-    except (FileNotFoundError, ValueError) as err:
-        print(err, file=sys.stderr)
-        sys.exit(1)
-
+    db = fetch_apk_index(repo_url)
+    
+    if target_package in db:
+        direct_deps = db[target_package]
+        print(f"\n[УСПЕХ] Пакет '{target_package}' найден.")
+        print(f"Прямые зависимости пакета ({len(direct_deps)} шт.):")
+        for dep in direct_deps:
+            print(f"  - {dep}")
+    else:
+        print(f"\n[ОШИБКА] Пакет '{target_package}' не найден в выбранном репозитории.")
 
 if __name__ == "__main__":
     main()
-

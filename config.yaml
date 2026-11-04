@@ -1,5 +1,5 @@
 package_name: "curl"
-repository_url: "https://alpinelinux.org"
+repository_url: "https://dl-cdn.alpinelinux.org/alpine/v3.14/main/x86_64/APKINDEX.tar.gz"
 test_mode: false
 ascii_tree_output: true
 max_depth: 5
