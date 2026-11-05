@@ -1,4 +1,4 @@
-package_name: "curl"
+package_name: "ack"
 repository_url: "https://dl-cdn.alpinelinux.org/alpine/v3.14/main/x86_64/APKINDEX.tar.gz"
 test_mode: false
 ascii_tree_output: true

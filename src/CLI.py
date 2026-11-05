@@ -45,11 +45,11 @@ def clean_dependency_name(dep_string):
 
 def fetch_apk_index(repo_url):
     """
-    Загружает и распаковывает файл APKINDEX.tar.gz по указанному URL.
+    Загружает и распаковывает файл APKINDEX.tar.gz 
+    по указанному URL.
     """
     index_url = repo_url.strip().strip('"').strip("'")
     user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-
     try:
         req = urllib.request.Request(
             index_url,
@@ -60,7 +60,6 @@ def fetch_apk_index(repo_url):
     except Exception as e:
         print(f"[ERROR] Не удалось загрузить репозиторий: {e}")
         return {}
-
     try:
         with tarfile.open(
             fileobj=BytesIO(compressed_data), mode="r:gz"
@@ -72,7 +71,8 @@ def fetch_apk_index(repo_url):
             content = apkindex_file.read().decode('utf-8')
         return parse_apk_index(content)
     except tarfile.ReadError:
-        print("[ERROR] Файл по адресу не является валидным архивом GZIP.")
+        print("[ERROR] Файл по " \
+        "адресу не является валидным архивом GZIP.")
         return {}
 
 
@@ -92,7 +92,8 @@ def parse_apk_index(content):
                 current_package = line[2:].strip()
             elif line.startswith('D:'):
                 raw_deps = line[2:].strip().split()
-                dependencies = [clean_dependency_name(d) for d in raw_deps]
+                dependencies = [clean_dependency_name(d) 
+                    for d in raw_deps]
 
         if current_package:
             packages_db[current_package] = dependencies
@@ -119,55 +120,32 @@ def load_test_repository(file_path):
     return packages_db
 
 
-def build_dependency_graph(
-    package, db, max_depth, filter_sub, current_depth=1,
-    graph=None, path=None, order=None, visited_nodes=None
-):
+def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, ctx=None):
     """
-    Рекурсивно строит граф зависимостей методом DFS и вычисляет
-    порядок загрузки пакетов.
+    Рекурсивно строит граф зависимостей методом DFS и 
+    вычисляет порядок загрузки пакетов.
     """
-    if graph is None:
-        graph = {}
-    if path is None:
-        path = []
-    if order is None:
-        order = []
-    if visited_nodes is None:
-        visited_nodes = set()
+    if ctx is None:
+        ctx = ({}, [], [], set())  
+    graph, path, order, visited_nodes = ctx
 
-    if filter_sub and filter_sub in package:
-        return graph, order
-
-    if current_depth > max_depth:
-        return graph, order
-
-    if package in path:
+    if (filter_sub and filter_sub in 
+        package) or (current_depth > max_depth) or (package in path):
         return graph, order
 
     path.append(package)
-
-    direct_deps = db.get(package, [])
-    filtered_deps = []
-
-    for dep in direct_deps:
-        if not (filter_sub and filter_sub in dep):
-            filtered_deps.append(dep)
-
+    filtered_deps = [d for d in db.get(package, []) if 
+         not (filter_sub and filter_sub in d)]
     graph[package] = filtered_deps
 
     for dep in filtered_deps:
-        build_dependency_graph(
-            dep, db, max_depth, filter_sub, current_depth + 1,
-            graph, path, order, visited_nodes
-        )
+        build_dependency_graph(dep, db, max_depth, 
+            filter_sub, current_depth + 1, ctx)
 
     path.pop()
-
     if package not in visited_nodes:
         visited_nodes.add(package)
         order.append(package)
-
     return graph, order
 
 
@@ -222,47 +200,28 @@ def generate_plantuml(graph):
 
 def main():
     """
-    Основная функция выполнения Этапа 5 для визуализации
-    графа зависимостей.
+    Основная функция выполнения Этапа 5 для визуализации графа зависимостей.
     """
-    config = parse_yaml_config("config.yaml")
-
-    if not config:
+    cfg = parse_yaml_config("config.yaml")
+    if not cfg:
         print("[ERROR] Конфигурация пуста или не найдена.")
         return
-
     print("Этап 5: Визуализация графа зависимостей")
-
-    target_package = config.get("package_name")
-    test_mode = config.get("test_mode", False)
-    repo_url = config.get("repository_url")
-    max_depth = config.get("max_depth", 5)
-    filter_substring = config.get("filter_substring", "")
-    ascii_tree_output = config.get("ascii_tree_output", False)
-
-    if not target_package or not repo_url:
+    tgt, url = cfg.get("package_name"), cfg.get("repository_url")
+    if not tgt or not url:
         print("[ERROR] В конфигурации отсутствуют обязательные параметры.")
         return
-
-    if test_mode:
-        db = load_test_repository(repo_url)
-    else:
-        db = fetch_apk_index(repo_url)
-
-    if target_package not in db:
-        print(f"[ERROR] Целевой пакет '{target_package}' не найден.")
+    db = load_test_repository(url) if cfg.get("test_mode",
+        False) else fetch_apk_index(url)
+    if tgt not in db:
+        print(f"[ERROR] Целевой пакет '{tgt}' не найден.")
         return
-
-    graph, _ = build_dependency_graph(
-        target_package, db, max_depth, filter_substring
-    )
-
-    if ascii_tree_output:
+    graph, _ = build_dependency_graph(tgt, db, cfg.get("max_depth", 5),
+     cfg.get("filter_substring", ""))
+    if cfg.get("ascii_tree_output", False):
         print("\n[ВЫВОД] ASCII-дерево зависимостей:")
-        print_ascii_tree(target_package, graph)
-
-    print("\n[ВЫВОД] Код диаграммы PlantUML:")
-    print(generate_plantuml(graph))
+        print_ascii_tree(tgt, graph)
+    print("\n[ВЫВОД] Код диаграммы PlantUML:\n" + generate_plantuml(graph))
 
 
 if __name__ == "__main__":
