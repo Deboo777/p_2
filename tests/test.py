@@ -16,7 +16,8 @@ class TestDependencyVisualizer(unittest.TestCase):
         self.assertEqual(clean_dependency_name("musl>=1.2.2"), "musl")
         self.assertEqual(clean_dependency_name("bash<5.0"), "bash")
         self.assertEqual(clean_dependency_name("zlib=1.2.11-r1"), "zlib")
-        self.assertEqual(clean_dependency_name("so:libssl.so.3"), "so:libssl.so.3")
+        self.assertEqual(clean_dependency_name("so:libssl.so.3"), 
+                        "so:libssl.so.3")
 
     def test_parse_yaml_config(self):
         """Тест ручного парсинга YAML с подменой файла (mock)."""
@@ -42,7 +43,8 @@ class TestDependencyVisualizer(unittest.TestCase):
         db = {
             "A": ["B", "so:libssl", "C"]
         }
-        graph, _ = build_dependency_graph("A", db, max_depth=5, filter_sub="so:")
+        graph, _ = build_dependency_graph("A", db,
+                         max_depth=5, filter_sub="so:")
         self.assertEqual(graph["A"], ["B", "C"])
 
     def test_generate_plantuml(self):

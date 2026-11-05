@@ -128,25 +128,30 @@ def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, 
     if ctx is None:
         ctx = ({}, [], [], set())  
     graph, path, order, visited_nodes = ctx
-
-    if (filter_sub and filter_sub in 
-        package) or (current_depth > max_depth) or (package in path):
+    def is_invalid():
+        if filter_sub and filter_sub in package:
+            return True
+        if current_depth > max_depth:
+            return True
+        if package in path:
+            return True
+        return False
+    if is_invalid():
         return graph, order
-
     path.append(package)
-    filtered_deps = [d for d in db.get(package, []) if 
-         not (filter_sub and filter_sub in d)]
+    filtered_deps = [d for d in db.get(package, 
+            []) if not (filter_sub and filter_sub in d)]
     graph[package] = filtered_deps
 
     for dep in filtered_deps:
         build_dependency_graph(dep, db, max_depth, 
-            filter_sub, current_depth + 1, ctx)
-
+                    filter_sub, current_depth + 1, ctx)
     path.pop()
     if package not in visited_nodes:
         visited_nodes.add(package)
         order.append(package)
     return graph, order
+
 
 
 def print_ascii_tree(package, graph, depth=0, visited=None):
