@@ -120,7 +120,8 @@ def load_test_repository(file_path):
     return packages_db
 
 
-def build_dependency_graph(package, db, max_depth, filter_sub, current_depth=1, ctx=None):
+def build_dependency_graph(package, db, max_depth, 
+        filter_sub, current_depth=1, ctx=None):
     """
     Рекурсивно строит граф зависимостей методом DFS и 
     вычисляет порядок загрузки пакетов.
