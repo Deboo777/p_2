@@ -2,7 +2,10 @@ import gzip
 import re
 import tarfile
 import urllib.request
+import base64
+import zlib
 from io import BytesIO
+from urllib.parse import urljoin
 
 
 def parse_yaml_config(file_path):
@@ -203,6 +206,30 @@ def generate_plantuml(graph):
     lines.append("@enduml")
     return "\n".join(lines)
 
+def generate_plantuml(graph):
+    """
+    Формирует строку с описанием графа зависимостей на языке
+    диаграмм PlantUML с безопасными идентификаторами узлов.
+    """
+    lines = ["@startuml", "!pragma layout smetana"]
+
+    all_packages = sorted(
+        set(graph.keys()).union(*graph.values())
+    )
+    aliases = {pkg: f"pkg_{i}" for i, pkg in enumerate(all_packages)}
+
+    for pkg in all_packages:
+        lines.append(f'  component "{pkg}" as {aliases[pkg]}')
+
+    lines.append("")
+
+    for pkg, deps in graph.items():
+        for dep in deps:
+            lines.append(f"  {aliases[pkg]} --> {aliases[dep]}")
+
+    lines.append("@enduml")
+    return "\n".join(lines)
+
 
 def main():
     """
@@ -227,7 +254,50 @@ def main():
     if cfg.get("ascii_tree_output", False):
         print("\n[ВЫВОД] ASCII-дерево зависимостей:")
         print_ascii_tree(tgt, graph)
-    print("\n[ВЫВОД] Код диаграммы PlantUML:\n" + generate_plantuml(graph))
+        puml_code = generate_plantuml(graph)
+    print("\n[ВЫВОД] Код диаграммы PlantUML:\n" + puml_code)
+    download_plantuml_image(puml_code)
+
+
+def encode_plantuml(plantuml_text):
+    """
+    Сжимает и кодирует текст диаграммы 
+    PlantUML в формат base64 для сервера.
+    """
+    zlib_data = zlib.compress(plantuml_text.encode('utf-8')
+    )[2:-4]
+    std_b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop" \
+    "qrstuvwxyz0123456789+/"
+    puml_b64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg" \
+    "hijklmnopqrstuvwxyz-_"
+    encoded = base64.b64encode(zlib_data).decode('ascii')
+    return encoded.translate(str.maketrans(std_b64, puml_b64))
+
+
+def download_plantuml_image(plantuml_code, output_path="diagram.png"):
+    """
+    Отправляет диаграмму на официальный 
+    сервер PlantUML и сохраняет PNG.
+    """
+    encoded_str = encode_plantuml(plantuml_code)
+    base_url = "https://plantuml.com"
+    path = "/".join(["plantuml", "png", encoded_str])
+    server_url = urljoin(base_url, path)
+    
+    print(f"[DEBUG] Запрос по адресу: {server_url[:45]}...")
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    
+    try:
+        req = urllib.request.Request(
+            server_url,
+            headers={'User-Agent': user_agent}
+        )
+        with urllib.request.urlopen(req) as response:
+            with open(output_path, 'wb') as f:
+                f.write(response.read())
+        print(f"[INFO] Диаграмма успешно сохранена в файл: {output_path}")
+    except Exception as e:
+        print(f"[ERROR] Не удалось сгенерировать или скачать диаграмму: {e}")
 
 
 if __name__ == "__main__":
